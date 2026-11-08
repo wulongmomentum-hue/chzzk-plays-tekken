@@ -74,14 +74,63 @@ TAP = 0.06         # 버튼 한 번 누르는 시간(초)
 STEP = 0.034       # 커맨드(6n23 등)에서 방향 하나를 유지하는 시간(초) ≈ 2프레임
 MOVE_HOLD = 0.35   # 방향 하나만 칠 때 누르고 있는 시간(초)
 CROUCH_HOLD = 0.5  # 앉기 계열(1, 2, 3 방향 단독) 유지 시간(초)
-MAX_STEPS = 20     # 커맨드 한 줄에 들어갈 수 있는 최대 입력 수 (장난 방지)
+MAX_STEPS = 20     # 커맨드 한 줄에 들어갈 수 있는 최대 입력 수 / '>' 로 이을 수 있는 최대 명령 수 (장난 방지)
+MAX_COMMAND_LENGTH = 40   # 명령 하나의 최대 글자 수
+MAX_CHAT_LENGTH = 240     # '>' 로 이은 전체 채팅의 최대 글자 수
+MAX_HOLD_FRAMES = 120     # '@' 뒤에 지정할 수 있는 최대 유지 프레임 (2초)
+SEQUENCE_GAP_FRAMES = 1   # '>' 사이에 모든 키를 뗀 상태로 기다리는 프레임
 BUTTON_GAP = 0.04  # 버튼을 차례로 누를 때(lk lp rp) 버튼 사이 간격(초)
 CHAIN_HOLD = 0.1   # 6n23n6n23 처럼 이어지는 커맨드에서 ↘ 를 유지하는 시간(초). 안 나가면 늘리기
 COMMAND_GAP = 0.1  # 서로 다른 채팅 명령 사이에 쉬는 시간(초). 명령끼리 섞이지 않게 함
 
-# 연속백대시: 4 4 1 n (4 1 n) 반복. 안 움직이면 BACKDASH_STEP 을 0.05 → 0.07 처럼 늘려 보세요.
-BACKDASH_COUNT = 5     # 백대시 횟수
-BACKDASH_STEP = 0.05   # 연속백대시에서 방향 하나를 유지하는 시간(초) ≈ 3프레임
+# 연속백대시·웨이브 (ADR-0015): 사람이 직접 입력한 기록(인풋 디스플레이)을 프레임 단위로 옮긴 것.
+#   (방향, 프레임 수) 목록. 방향은 숫자패드·캐릭터 기준(4=뒤, 6=앞, 1=뒷대각, 3=앞대각, n=중립). 60프레임 = 1초.
+
+# 연속백대시: 4(4F) n(6F) → [4(9F) 1(4F) 4(2F) n(5F)] x BACKDASH_COUNT   (= 4414 414 414 ...)
+#   백대시가 덜 나가면 BACKDASH_SET 의 n 프레임을, 한 번도 안 움직이면 첫 4 프레임을 늘리세요.
+BACKDASH_COUNT = 5
+BACKDASH_FIRST = [("4", 4), ("n", 6)]
+BACKDASH_SET = [("4", 9), ("1", 4), ("4", 2), ("n", 5)]
+
+# 웨이브: 6n23 뒤에 대시(6 n)가 섞인 6n236n 을 반복
+#   [6(3F) n(2F) 2(1F) 3(2F) 6(3F) n(4F)] x WAVE_COUNT
+#   앉아대시가 안 나가면 2(↓) 프레임을 2로, 이어지지 않으면 마지막 n 프레임을 늘리세요.
+WAVE_COUNT = 3
+WAVE_SET = [("6", 3), ("n", 2), ("2", 1), ("3", 2), ("6", 3), ("n", 4)]
+
+# ---- 기본 스텝 (ADR-0012) ----
+# 철권은 위(8)/아래(2)를 '짧게 톡' 치면 횡이동, '길게' 누르면 점프/앉기가 됩니다.
+SIDESTEP_TAP = 0.034   # 횡이동 때 위/아래를 누르는 시간(초) ≈ 2프레임. 점프·앉기가 나가면 줄이고, 안 움직이면 늘리기
+SIDEWALK_HOLD = 0.6    # 횡걷기: 횡이동 직후 같은 방향을 계속 누르는 시간(초)
+WALK_HOLD = 0.6        # 앞걷기/뒷걷기 유지 시간(초)
+JUMP_HOLD = 0.15       # 점프(7·8·9 단독) 누르는 시간(초). 너무 짧으면 점프 대신 횡이동이 됨
+
+# ---- 기술 후딜레이 (ADR-0012) ----
+# 기술이 끝나기 전에 다음 명령을 넣으면 입력이 씹히거나 엉뚱한 기술이 나갑니다.
+# 명령을 실행한 뒤 아래 프레임만큼 기다렸다가 다음 명령을 넣습니다. (60프레임 = 1초)
+RECOVERY_ENABLED = True
+FPS = 60
+RECOVERY_SCALE = 1.0   # 전체 후딜 배율 (1.0 = 그대로, 0.5 = 절반만 기다림)
+RECOVERY_MAX = 1.5     # 후딜 최대(초). 아무리 긴 기술이어도 이보다 오래 기다리지 않음
+RECOVERY_FRAMES = {
+    "이동": 0,      # 방향 단독(이동·앉기)·걷기 — 누르는 시간 자체가 동작 시간
+    "점프": 30,     # 점프 후 착지까지
+    "스텝": 16,     # 횡이동 한 번
+    "대시": 4,
+    "백대시": 8,
+    "펀치": 18,     # 1·2 단독
+    "킥": 26,       # 3·4 단독
+    "동시": 30,     # 1+2, 3+4, 1+2+3+4 같은 동시 버튼
+    "커맨드": 6,    # 방향이 들어간 기술(↘+2, 236lp 등)이면 추가
+    "하단": 6,      # 마지막 버튼을 1·2·3 방향과 함께 누르면 추가 (앉은 자세 기술은 후딜이 긴 편)
+    "연속": 12,     # 버튼을 차례로 누른 경우 2타째부터 한 번마다 추가 (lklprp 등)
+    "잡기": 40,     # 1+3, 2+4, '잡기' (헛잡기는 후딜이 큼)
+    "기상": 20,     # 일어나기
+}
+# 특정 기술만 따로 정하기: 로그/오버레이에 보이는 이름 → 후딜 프레임 (위 규칙보다 우선)
+#   예) "↘+RP": 30,   "LP+RP": 34,   "↓+RK": 28,   "초풍": 32,   "백대시": 6
+MOVE_RECOVERY = {
+}
 
 # OBS 오버레이 (overlay.html 이 같은 폴더에 있어야 함)
 #   원컴: OVERLAY_HOST = "127.0.0.1"  → OBS URL  http://127.0.0.1:8765
@@ -255,15 +304,18 @@ def _events(dirs, btns=()):
     return evs
 
 
-def perform(events, step=None):
-    """이벤트를 차례로 입력. 이벤트 = [방향 또는 None, 동시에 누를 버튼 집합]."""
+def perform(events, step=None, hold_frames=None):
+    """이벤트를 차례로 입력. 이벤트 = [방향 또는 None, 동시에 누를 버튼 집합].
+    hold_frames: '@N' 으로 지정한 경우 마지막 방향/버튼을 N프레임 동안 유지."""
     step = STEP if step is None else step
     held = set()
     try:
         # 방향 하나 + 버튼 없음 → 이동/앉기/점프처럼 조금 길게 유지
         if len(events) == 1 and events[0][0] and not events[0][1]:
             d = events[0][0]
-            hold = CROUCH_HOLD if d in "123" else (TAP if d in "789" else MOVE_HOLD)
+            hold = CROUCH_HOLD if d in "123" else (JUMP_HOLD if d in "789" else MOVE_HOLD)
+            if hold_frames is not None:
+                hold = hold_frames / FPS
             held = _set_held(held, _dir_keys(d))
             time.sleep(hold)
             return
@@ -280,7 +332,7 @@ def perform(events, step=None):
             dk = _dir_keys(d) if d else set()
             if b:
                 held = _set_held(held, dk | {BUTTON_KEYS[x] for x in b})
-                time.sleep(TAP)
+                time.sleep(hold_frames / FPS if hold_frames is not None and i == last else TAP)
                 held = _set_held(held, dk)  # 버튼만 떼고 방향은 유지
                 if i < last:
                     time.sleep(BUTTON_GAP)
@@ -290,11 +342,141 @@ def perform(events, step=None):
                 # 6n23 n 6n23 처럼 이어지는 커맨드: ↘/↙ 를 조금 더 길게 눌러 앞 동작이 나오게 함
                 if d in ("3", "1") and i + 2 <= last and seq[i + 1][0] in ("n", "5"):
                     hold = max(hold, CHAIN_HOLD)
+                if hold_frames is not None and i == last:
+                    hold = hold_frames / FPS
                 time.sleep(hold)
     finally:
         _set_held(held, set())
 
 
+def sidestep(d, walk=0.0):
+    """횡이동: 위(8)/아래(2)를 짧게 톡. walk > 0 이면 이어서 같은 방향을 눌러 횡걷기."""
+    held = set()
+    try:
+        held = _set_held(held, _dir_keys(d))
+        time.sleep(SIDESTEP_TAP)
+        held = _set_held(held, set())
+        if walk:
+            time.sleep(STEP)
+            held = _set_held(held, _dir_keys(d))
+            time.sleep(walk)
+    finally:
+        _set_held(held, set())
+
+
+def hold_dir(d, seconds):
+    """방향 하나를 정해진 시간 동안 누르기 (앞걷기/뒷걷기)."""
+    held = set()
+    try:
+        held = _set_held(held, _dir_keys(d))
+        time.sleep(seconds)
+    finally:
+        _set_held(held, set())
+
+
+def press_steps(steps):
+    """(방향, 유지 초) 목록을 차례로 입력. 연속백대시·웨이브처럼 단계마다 딜레이가 다른 입력용."""
+    held = set()
+    try:
+        for d, seconds in steps:
+            held = _set_held(held, _dir_keys(d))
+            time.sleep(seconds)
+    finally:
+        _set_held(held, set())
+
+
+def _wait_until(t):
+    """t(perf_counter 시각)까지 정밀 대기. 대부분은 sleep, 마지막 2ms 는 바쁜 대기 → 1프레임 입력도 정확히."""
+    while True:
+        left = t - time.perf_counter()
+        if left <= 0:
+            return
+        if left > 0.003:
+            time.sleep(left - 0.002)
+
+
+def press_frames(steps):
+    """(방향, 프레임 수) 목록을 프레임 단위로 입력. 시작 시각 기준 누적이라 오차가 쌓이지 않음."""
+    held = set()
+    t = time.perf_counter()
+    try:
+        for d, frames in steps:
+            held = _set_held(held, _dir_keys(d))
+            t += frames / FPS
+            _wait_until(t)
+    finally:
+        _set_held(held, set())
+
+
+def backdash_steps(count):
+    """연속백대시: BACKDASH_FIRST + BACKDASH_SET x count (프레임 목록)."""
+    return list(BACKDASH_FIRST) + list(BACKDASH_SET) * count
+
+
+def wave_steps(count):
+    """웨이브: WAVE_SET x count (프레임 목록)."""
+    return list(WAVE_SET) * count
+
+
+def recovery(label, events=None, kind=None):
+    """명령 실행 후 기다릴 후딜레이(초). MOVE_RECOVERY > kind > 입력 모양으로 추정 순."""
+    if not RECOVERY_ENABLED:
+        return 0.0
+    if label in MOVE_RECOVERY:
+        frames = MOVE_RECOVERY[label]
+    elif kind:
+        frames = RECOVERY_FRAMES.get(kind, 0)
+    else:
+        events = events or []
+        presses = [e for e in events if e[1]]
+        if not presses:
+            jump = len(events) == 1 and events[0][0] in ("7", "8", "9")
+            frames = RECOVERY_FRAMES["점프" if jump else "이동"]
+        else:
+            d, btns = presses[-1]  # 마지막에 나가는 기술의 후딜이 다음 입력을 막음
+            has_dir = any(e[0] not in (None, "n", "5") for e in events)
+            if not has_dir and len(presses) == 1 and btns in ({"1", "3"}, {"2", "4"}):
+                frames = RECOVERY_FRAMES["잡기"]
+            elif len(btns) >= 2:
+                frames = RECOVERY_FRAMES["동시"]
+            elif btns <= {"1", "2"}:
+                frames = RECOVERY_FRAMES["펀치"]
+            else:
+                frames = RECOVERY_FRAMES["킥"]
+            if has_dir:
+                frames += RECOVERY_FRAMES["커맨드"]
+            if d in ("1", "2", "3"):
+                frames += RECOVERY_FRAMES["하단"]
+            frames += RECOVERY_FRAMES["연속"] * (len(presses) - 1)
+    return min(frames / FPS * RECOVERY_SCALE, RECOVERY_MAX)
+
+
+# 기본 스텝 명령 (띄어쓰기·대소문자 무시). 횡이동/횡걷기는 화면 안쪽=위, 바깥쪽=아래
+SIDESTEP_UP = ("횡위", "위횡", "윗횡", "횡이동", "횡이동위", "횡", "스텝", "스텝위", "ss", "ssu")
+SIDESTEP_DOWN = ("횡아래", "아래횡", "아랫횡", "횡이동아래", "스텝아래", "ssd")
+SIDEWALK_UP = ("횡걷기", "횡걷기위", "위횡걷기", "횡보", "횡걸음")
+SIDEWALK_DOWN = ("횡걷기아래", "아래횡걷기", "횡보아래", "횡걸음아래")
+# 회전 방향 횡 (ADR-0018). 2P(오른쪽) 기준 반시계 = ↑(화면 안쪽), 시계 = ↓. 1P(왼쪽)이면 반대.
+CCW_STEP = ("반시계횡신",)
+CCW_WALK = ("반시계횡보", "반시계횡걸음")
+CW_STEP = ("시계횡신",)
+CW_WALK = ("시계횡보", "시계횡걸음")
+
+
+def _rot_dir(clockwise):
+    """시계/반시계 → 위(8)/아래(2). 실행하는 순간의 사이드 기준 (큐에서 기다리는 동안 사이드가 바뀌어도 맞게)."""
+    if MY_SIDE == "오른쪽":
+        return "2" if clockwise else "8"
+    return "8" if clockwise else "2"
+WALK_FWD = ("앞걷기", "전진")
+WALK_BACK = ("뒷걷기", "뒤걷기", "후진")
+CROUCH_DASH = ("앉아대시", "앉아대쉬", "ㅇㅇㄷㅅ")
+WAKE_UP = ("일어나", "일어나기", "일어서", "기상")
+EWGF = ("초풍", "ㅊㅍ")
+WAVE = ("웨이브", "웨이브대시", "웨이브대쉬", "ㅇㅇㅂ")
+
+
+BUTTON_NAMES = {"1": "LP", "2": "RP", "3": "LK", "4": "RK"}  # 표시 이름용 (숫자는 방향과 헷갈리므로)
 _ARROWS = {"1": "↙", "2": "↓", "3": "↘", "4": "←", "5": "·", "n": "·",
            "6": "→", "7": "↖", "8": "↑", "9": "↗"}
 
@@ -302,7 +484,7 @@ _ARROWS = {"1": "↙", "2": "↓", "3": "↘", "4": "←", "5": "·", "n": "·",
 def _label(events):
     out, prev_btn = "", False
     for d, b in events:
-        piece = (_ARROWS[d] if d else "") + (("+" if d else "") + "+".join(sorted(b)) if b else "")
+        piece = (_ARROWS[d] if d else "") + (("+" if d else "") + "+".join(BUTTON_NAMES[x] for x in sorted(b)) if b else "")
         if out and (prev_btn or d is None):
             out += ","
         out += piece
@@ -311,36 +493,112 @@ def _label(events):
 
 
 def parse(text):
-    """채팅 → (표시용 이름, 실행 함수). 명령이 아니면 None."""
+    """채팅 → (표시용 이름, 실행 함수, 후딜레이 초). 명령이 아니면 None.
+    '>' : 여러 명령을 차례로 실행 (예: 6n23rp>2lk)  /  '@N' : 마지막 입력을 N프레임 유지 (예: 3lk@5)"""
     raw = (text or "").strip().lower().replace(" ", "")
-    if not raw or len(raw) > 40:
+    if not raw or len(raw) > MAX_CHAT_LENGTH:
         return None
 
-    # 특수 명령
-    if raw == "잡기":
-        return "잡기", lambda: perform(_events([], ["1", "3"]))
-    if raw in ("대시", "ㄷㅅ"):
-        return "대시", lambda: perform(_events(["6", "n", "6"]))
-    if raw in ("백대시", "백대쉬", "ㅂㄷㅅ"):
-        return "백대시", lambda: perform(_events(["4", "n", "4"]))
-    if raw in ("연속백대시", "연속백대쉬", "ㅇㅅㅂㄷㅅ"):
-        # 4414 414 414 414 414  (414 사이의 4 4 는 자동으로 중립을 끼워 두 번 입력)
-        seq = ["4", "4", "1", "4"] + ["4", "1", "4"] * (BACKDASH_COUNT - 1)
-        return f"연속백대시x{BACKDASH_COUNT}", lambda: perform(_events(seq), BACKDASH_STEP)
+    # '>' 연결: 각 부분을 따로 해석해 차례로 실행. 하나라도 명령이 아니면 전체 무시.
+    #   사이에는 모든 키를 뗀 상태로 SEQUENCE_GAP_FRAMES 만큼 쉼 (후딜 대기 없이 이어서 → 콤보 가능)
+    if ">" in raw:
+        parts = raw.split(">")
+        if len(parts) > MAX_STEPS or any(not p for p in parts):
+            return None
+        commands = [parse(p) for p in parts]
+        if any(c is None for c in commands):
+            return None
 
-    # ① 버튼만: 1 / 2 / 1+2 / 3+4 / 1+2+3+4 ...  (1~4 숫자를 + 로만 연결) → 동시 입력
-    if re.fullmatch(r"[1-4](\+[1-4])*", raw):
-        btns = sorted(set(raw.split("+")))
-        return "+".join(btns), lambda: perform(_events([], btns))
+        def sequence():
+            for index, (_, action, _) in enumerate(commands):
+                if index:
+                    _wait_until(time.perf_counter() + SEQUENCE_GAP_FRAMES / FPS)
+                action()
+
+        return " > ".join(c[0] for c in commands), sequence, commands[-1][2]
+
+    if len(raw) > MAX_COMMAND_LENGTH:
+        return None
+
+    # '@N': 마지막 방향/버튼을 N프레임 동안 유지한 뒤 해제
+    hold_frames = None
+    if "@" in raw:
+        match = re.fullmatch(r"([^@]+)@([0-9]{1,3})", raw)
+        if not match:
+            return None
+        raw, frame_text = match.groups()
+        hold_frames = int(frame_text)
+        if not 1 <= hold_frames <= MAX_HOLD_FRAMES:
+            return None
+
+    special = _special(raw)
+    if special is not None:
+        # 특수 명령은 자체 타이밍을 쓰므로 '@' 지정은 받지 않음
+        return None if hold_frames is not None else special
+    return _parse_basic(raw, hold_frames)
+
+
+def _special(raw):
+    """특수 명령(잡기·대시·기본 스텝·초풍·웨이브 등)이면 결과, 아니면 None."""
+    if raw == "잡기":
+        return "잡기", lambda: perform(_events([], ["1", "3"])), recovery("잡기", kind="잡기")
+    if raw in ("대시", "ㄷㅅ"):
+        return "대시", lambda: perform(_events(["6", "n", "6"])), recovery("대시", kind="대시")
+    if raw in ("백대시", "백대쉬", "ㅂㄷㅅ"):
+        return "백대시", lambda: perform(_events(["4", "n", "4"])), recovery("백대시", kind="백대시")
+    if raw in ("연속백대시", "연속백대쉬", "ㅇㅅㅂㄷㅅ"):
+        # 사람 입력 기록 그대로: 4(4F) n(6F) + [4(9F) 1(4F) 4(2F) n(5F)] x BACKDASH_COUNT
+        name = f"연속백대시x{BACKDASH_COUNT}"
+        steps = backdash_steps(BACKDASH_COUNT)
+        return name, lambda: press_frames(steps), recovery(name, kind="이동")
+
+    # 기본 스텝: 횡이동 / 횡걷기 / 앞·뒷걷기 / 앉아대시
+    if raw in SIDESTEP_UP:
+        return "횡이동↑", lambda: sidestep("8"), recovery("횡이동↑", kind="스텝")
+    if raw in SIDESTEP_DOWN:
+        return "횡이동↓", lambda: sidestep("2"), recovery("횡이동↓", kind="스텝")
+    if raw in SIDEWALK_UP:
+        return "횡걷기↑", lambda: sidestep("8", SIDEWALK_HOLD), recovery("횡걷기↑", kind="이동")
+    if raw in SIDEWALK_DOWN:
+        return "횡걷기↓", lambda: sidestep("2", SIDEWALK_HOLD), recovery("횡걷기↓", kind="이동")
+    if raw in CCW_STEP:
+        return "반시계횡신", lambda: sidestep(_rot_dir(False)), recovery("반시계횡신", kind="스텝")
+    if raw in CCW_WALK:
+        return "반시계횡보", lambda: sidestep(_rot_dir(False), SIDEWALK_HOLD), recovery("반시계횡보", kind="이동")
+    if raw in CW_STEP:
+        return "시계횡신", lambda: sidestep(_rot_dir(True)), recovery("시계횡신", kind="스텝")
+    if raw in CW_WALK:
+        return "시계횡보", lambda: sidestep(_rot_dir(True), SIDEWALK_HOLD), recovery("시계횡보", kind="이동")
+    if raw in WALK_FWD:
+        return "앞걷기", lambda: hold_dir("6", WALK_HOLD), recovery("앞걷기", kind="이동")
+    if raw in WALK_BACK:
+        return "뒷걷기", lambda: hold_dir("4", WALK_HOLD), recovery("뒷걷기", kind="이동")
+    if raw in CROUCH_DASH:
+        return "앉아대시", lambda: perform(_events(["6", "n", "3"])), recovery("앉아대시", kind="대시")
+    if raw in WAKE_UP:
+        # 다운 상태에서 8 = 일어나기. 짧게 눌러 서 있을 때 점프가 나가지 않게 함
+        return "기상", lambda: press_steps([("8", TAP)]), recovery("기상", kind="기상")
+    if raw in EWGF:
+        ev = _events(["6", "n", "2", "3"], ["2"])  # 6n23rp
+        return "초풍", lambda: perform(ev), recovery("초풍", ev)
+    if raw in WAVE:
+        name = f"웨이브x{WAVE_COUNT}"
+        steps = wave_steps(WAVE_COUNT)
+        return name, lambda: press_frames(steps), recovery(name, kind="대시")
+    return None
+
+
+def _parse_basic(raw, hold_frames=None):
+    """일반 명령(숫자패드·한글 방향·버튼). hold_frames = '@N' 유지 프레임."""
+    # 숫자는 항상 숫자패드 방향. 공격은 lp / rp / lk / rk / ap(lp+rp) / ak(lk+rk) 로만 입력 (ADR-0017)
 
     # ② 토큰 분해: 한글 방향 / 영문 버튼 / 숫자 / n / +
-    tokens, i, used_korean = [], 0, False
+    tokens, i = [], 0
     while i < len(raw):
         for w in _DIR_WORDS_SORTED:
             if raw.startswith(w, i):
                 tokens.append(("dir", DIR_WORDS[w]))
                 i += len(w)
-                used_korean = True
                 break
         else:
             for w, b in BUTTON_WORDS.items():
@@ -371,10 +629,7 @@ def parse(text):
             prev = "plus"
             continue
         if kind == "num":
-            # + 뒤 숫자, 또는 한글 방향을 쓴 명령의 숫자 → 버튼 / 그 외 → 숫자패드 방향
-            kind = "btn" if (prev == "plus" or used_korean) else "dir"
-            if kind == "btn" and v not in BUTTON_KEYS:
-                return None
+            kind = "dir"  # 숫자는 항상 방향 (6+lp 는 되지만 6+1 은 명령이 아님)
         if kind == "dir":
             if prev == "plus":
                 return None
@@ -388,8 +643,8 @@ def parse(text):
     if prev == "plus" or not events or len(events) > MAX_STEPS:
         return None
 
-    label = _label(events)
-    return label, lambda: perform(events)
+    label = _label(events) + (f"@{hold_frames}" if hold_frames is not None else "")
+    return label, lambda: perform(events, hold_frames=hold_frames), recovery(label, events)
 
 
 queue: asyncio.Queue = asyncio.Queue()
@@ -451,7 +706,7 @@ async def on_chat(message: Message):
     parsed = parse(message.content or "")
     if parsed is None:
         return
-    cmd, action = parsed
+    cmd, action, delay = parsed
 
     profile = getattr(message, "profile", None)
     user = getattr(profile, "nickname", None) or "익명"
@@ -462,19 +717,20 @@ async def on_chat(message: Message):
 
     if MODE == "민주주의":
         votes[cmd] += 1
-        vote_actions[cmd] = action
+        vote_actions[cmd] = (action, delay)
         emit({"type": "votes", "top": votes.most_common(3), "total": sum(votes.values())})
     elif queue.qsize() < MAX_QUEUE:
-        await queue.put((user, cmd, action))
+        await queue.put((user, cmd, action, delay))
 
 
 async def chaos_worker():
     while True:
-        user, cmd, action = await queue.get()
-        print(f"🎮 {user}: {cmd}")
-        emit({"type": "cmd", "user": user, "cmd": cmd})
+        user, cmd, action, delay = await queue.get()
+        print(f"🎮 {user}: {cmd}" + (f"  (후딜 {delay:.2f}초)" if delay else ""))
+        emit({"type": "cmd", "user": user, "cmd": cmd, "recovery": round(delay, 2)})
         await asyncio.to_thread(action)
-        await asyncio.sleep(COMMAND_GAP)
+        # 기술 후딜레이가 끝날 때까지 다음 명령을 넣지 않음 (최소 COMMAND_GAP)
+        await asyncio.sleep(max(COMMAND_GAP, delay))
 
 
 async def democracy_worker():
@@ -485,12 +741,13 @@ async def democracy_worker():
             continue
         cmd, count = votes.most_common(1)[0]
         total = sum(votes.values())
-        action = vote_actions[cmd]
+        action, delay = vote_actions[cmd]
         votes.clear()
         vote_actions.clear()
         print(f"🗳️ 결과: '{cmd}' ({count}/{total}표) 실행!")
         emit({"type": "result", "cmd": cmd, "count": count, "total": total})
         await asyncio.to_thread(action)
+        await asyncio.sleep(delay)  # 후딜 동안 다음 라운드 결과가 겹치지 않게 함
 
 
 async def main():
@@ -504,7 +761,7 @@ async def main():
 
 if __name__ == "__main__":
     print("치지직(공식 API) 채팅 → 철권 조종 봇 시작")
-    print(f"캐릭터 위치: {MY_SIDE} (채팅 '사이드변경'으로 전환)  |  예) 1, 1+2, lklprp, 앞대각4, 3rk, 6n23rp, 236lp, 연속백대시")
+    print(f"캐릭터 위치: {MY_SIDE} (채팅 '사이드변경'으로 전환)  |  예) lp, ap, lklprp, 앞대각rk, 3rk, 6n23rp, 236lp, 연속백대시, 횡위, 횡아래, 횡걷기, 기상, 초풍, 웨이브, 3lk@5, 6n23rp>2lk")
     if "여기에" in CLIENT_ID + CLIENT_SECRET:
         print("❌ 파일 위쪽 [설정]의 CLIENT_ID / CLIENT_SECRET 을 아직 안 채우셨어요.")
         print("   이 파일을 메모장으로 열어 '여기에_...' 부분을 바꾼 뒤 저장하고 다시 실행하세요.")
