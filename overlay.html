@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>채팅 조종 오버레이</title>
+<!--
+  OBS 브라우저 소스용 오버레이.
+  주소 뒤에 옵션을 붙일 수 있어요:  http://127.0.0.1:8765/?pos=bc&scale=1&max=5&hold=6
+    pos   = 패널 위치  bc(가운데아래, 기본) bl(왼쪽아래) br(오른쪽아래) tl(왼쪽위) tr(오른쪽위)
+    scale = 크기 배율 (예: 0.8, 1.2)
+    max   = 한 번에 보일 명령 수 (기본 5)
+    hold  = 명령이 화면에 남는 시간(초, 기본 6)
+-->
+<style>
+  :root {
+    --bg: rgba(10, 12, 18, 0.62);
+    --line: rgba(255, 255, 255, 0.10);
+    --text: #f2f4f8;
+    --dim: rgba(242, 244, 248, 0.55);
+    --accent: #ffb020;
+    --good: #3ddc84;
+    --bad: #ff5a5a;
+  }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body {
+    font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  #panel {
+    position: fixed;
+    width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transform-origin: var(--origin, bottom left);
+  }
+  .pos-tl { top: 24px; left: 24px; --origin: top left; }
+  .pos-tr { top: 24px; right: 24px; --origin: top right; }
+  .pos-bl { bottom: 24px; left: 24px; --origin: bottom left; }
+  .pos-br { bottom: 24px; right: 24px; --origin: bottom right; }
+  .pos-bc { bottom: 24px; left: 50%; --origin: bottom center; translate: -50% 0; }
+
+  .chip {
+    align-self: flex-start;
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 11px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 13px; font-weight: 700; letter-spacing: 0.01em;
+    backdrop-filter: blur(4px);
+  }
+  .pos-tr .chip, .pos-br .chip { align-self: flex-end; }
+  .pos-bc .chip { align-self: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+  .dot.on { background: var(--good); box-shadow: 0 0 6px var(--good); }
+  .sep { color: var(--dim); font-weight: 400; }
+  .side { color: var(--accent); }
+
+  #feed { display: flex; flex-direction: column; gap: 4px; }
+  .pos-tl #feed, .pos-tr #feed { flex-direction: column-reverse; }
+  .item {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 6px 12px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    animation: pop 0.18s ease-out;
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  .item.out { opacity: 0; transform: translateY(6px); }
+  .who {
+    flex: 0 0 auto; max-width: 96px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 13px; color: var(--dim);
+  }
+  .cmd {
+    font-size: 19px; font-weight: 800; letter-spacing: 0.02em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .item.result { border-color: rgba(255, 176, 32, 0.6); }
+  .item.result .who { color: var(--accent); }
+  .item.side-ev .cmd { color: var(--accent); font-size: 16px; }
+
+  #vote {
+    display: none;
+    padding: 8px 12px 10px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  #vote.show { display: block; }
+  .timer { height: 3px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
+  .timer > i { display: block; height: 100%; width: 100%; background: var(--accent); transform-origin: left; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; margin-top: 4px; }
+  .row b { font-size: 16px; font-weight: 800; }
+  .row span { font-size: 12px; color: var(--dim); }
+  .bar { grid-column: 1 / -1; height: 4px; background: rgba(255,255,255,0.10); border-radius: 2px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--text); opacity: 0.8; transition: width 0.2s ease; }
+  .empty { font-size: 12px; color: var(--dim); }
+
+  @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+<div id="panel">
+  <div class="chip"><span class="dot" id="dot"></span><span>채팅 조종</span><span class="sep">·</span><span class="side" id="side">-</span><span class="sep">·</span><span id="mode">-</span></div>
+  <div id="vote"><div class="timer"><i id="timer"></i></div><div id="tally"></div></div>
+  <div id="feed"></div>
+</div>
+<script>
+  const q = new URLSearchParams(location.search);
+  const POS = ["tl", "tr", "bl", "br", "bc"].includes(q.get("pos")) ? q.get("pos") : "bc";
+  const SCALE = parseFloat(q.get("scale")) || 1;
+  const MAX = parseInt(q.get("max")) || 5;
+  const HOLD = (parseFloat(q.get("hold")) || 6) * 1000;
+
+  const panel = document.getElementById("panel");
+  panel.classList.add("pos-" + POS);
+  panel.style.scale = SCALE;
+  const feed = document.getElementById("feed");
+  const $ = (id) => document.getElementById(id);
+
+  function sideLabel(s) { return s === "왼쪽" ? "1P" : "2P"; }
+
+  function add(who, cmd, cls) {
+    const el = document.createElement("div");
+    el.className = "item" + (cls ? " " + cls : "");
+    const w = document.createElement("span"); w.className = "who"; w.textContent = who;
+    const c = document.createElement("span"); c.className = "cmd"; c.textContent = cmd;
+    el.append(w, c);
+    feed.appendChild(el);
+    while (feed.children.length > MAX) feed.firstChild.remove();
+    setTimeout(() => { el.classList.add("out"); setTimeout(() => el.remove(), 600); }, HOLD);
+  }
+
+  function setStatus(side, mode) {
+    $("side").textContent = sideLabel(side);
+    $("mode").textContent = mode;
+    $("vote").classList.toggle("show", mode === "민주주의");
+  }
+
+  function startRound(sec) {
+    const t = $("timer");
+    t.style.transition = "none"; t.style.transform = "scaleX(1)";
+    void t.offsetWidth;
+    t.style.transition = `transform ${sec}s linear`; t.style.transform = "scaleX(0)";
+    $("tally").innerHTML = '<div class="empty">명령을 채팅에 쳐서 투표하세요</div>';
+  }
+
+  function showVotes(top, total) {
+    const box = $("tally"); box.innerHTML = "";
+    top.forEach(([cmd, n]) => {
+      const row = document.createElement("div"); row.className = "row";
+      const b = document.createElement("b"); b.textContent = cmd;
+      const s = document.createElement("span"); s.textContent = `${n}표`;
+      const bar = document.createElement("div"); bar.className = "bar";
+      const i = document.createElement("i"); i.style.width = (total ? (n / total) * 100 : 0) + "%";
+      bar.appendChild(i); row.append(b, s, bar); box.appendChild(row);
+    });
+  }
+
+  function connect() {
+    const es = new EventSource("/events");
+    es.onopen = () => $("dot").classList.add("on");
+    es.onerror = () => $("dot").classList.remove("on");
+    es.onmessage = (e) => {
+      const ev = JSON.parse(e.data);
+      if (ev.type === "status") setStatus(ev.side, ev.mode);
+      else if (ev.type === "cmd") add(ev.user, ev.cmd);
+      else if (ev.type === "round") startRound(ev.seconds);
+      else if (ev.type === "votes") showVotes(ev.top, ev.total);
+      else if (ev.type === "result") add(`${ev.count}/${ev.total}표`, ev.cmd, "result");
+      else if (ev.type === "side") { $("side").textContent = sideLabel(ev.side); add(ev.user, `사이드 변경 → ${sideLabel(ev.side)}`, "side-ev"); }
+    };
+  }
+  connect();
+</script>
+</body>
+</html>
